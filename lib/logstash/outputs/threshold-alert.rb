@@ -6,21 +6,10 @@ require "logstash/namespace"
 class LogStash::Outputs::Threshold-Alert < LogStash::Outputs::Base
   config_name "threshold_alert"
 
-    config :to, :validate => :string, :required => true
-
-  # The fully-qualified email address for the From: field in the email.
+  config :to, :validate => :string, :required => true
   config :from, :validate => :string, :default => "logstash.alert@nowhere.com"
-
-  # The fully qualified email address for the Reply-To: field.
   config :replyto, :validate => :string
-
-  # The fully-qualified email address(es) to include as cc: address(es).
-  #
-  # This field also accepts a comma-separated string of addresses, for example:
-  # `"me@host.com, you@host.com"`
   config :cc, :validate => :string
-
-  # How Logstash should send the email, either via SMTP or by invoking sendmail.
   config :via, 			  :validate => :string,  :default => "smtp"
   config :address,  	  :validate => :string,  :default => "localhost"
   config :port, 		  :validate => :number,  :default => 25
