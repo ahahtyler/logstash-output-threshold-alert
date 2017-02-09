@@ -1,3 +1,4 @@
+```
 require "open3"
 require "csv"
 require "json"
@@ -236,3 +237,4 @@ rescue Exception => e
     puts "Exception: #{e.inspect}"
     puts "Backtrace: #{e.backtrace}"
 end
+```
