@@ -98,12 +98,17 @@ def build_payload(fguid, index, searchType, timeframe, exclude_labels, exclude_f
   if exclude_labels.empty?
     if label.eql?("No Labels")
       payload += "-aggregatedLabels:(#{lguid})"
+    elsif !label.eql?("")
+      payload += "aggregatedLabels:(#{lguid})"
     elsif !label.eql?("All Labels")
       payload += "aggregatedLabels:(#{lguid})"
     end
   else
     if label.eql?("No Labels")
       payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")} OR #{lguid})"
+    elsif !label.eql?("")
+      payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")})"
+      payload += "aggregatedLabels:(#{lguid})"
     elsif !label.eql?("All Labels")
       payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")})"
       payload += "aggregatedLabels:(#{lguid})"
