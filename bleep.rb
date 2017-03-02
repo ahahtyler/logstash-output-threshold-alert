@@ -67,13 +67,13 @@ def create_time_ranges
   bry   = DateTime.now.strftime("%Y-01-01T08:00:00.000Z")
   bot   = "*"
 
- return { 'key' => "24h", 'range' =>  {'start' => day1 ,  'end' => today},
-          'key' => "1wk", 'range' =>  {'start' => week1,  'end' => today},
-          'key' => "2wk", 'range' =>  {'start' => week2,  'end' => today},
-          'key' => "3wk", 'range' =>  {'start' => week3,  'end' => today},
-          'key' => "4wk", 'range' =>  {'start' => week4,  'end' => today},
-          'key' => "byr", 'range' =>  {'start' => bry  ,  'end' => today},
-          'key' => "bot", 'range' =>  {'start' => bot  ,  'end' => today}}
+ return { '24h' => {'start' => day1 ,  'end' => today},
+          '1wk' => {'start' => week1,  'end' => today},
+          '2wk' => {'start' => week2,  'end' => today},
+          '3wk' => {'start' => week3,  'end' => today},
+          '4wk' => {'start' => week4,  'end' => today},
+          'byr' => {'start' => bry  ,  'end' => today},
+          'bot' => {'start' => bot  ,  'end' => today}}
 end
 
 def create_label_combos
@@ -84,13 +84,13 @@ def create_label_combos
 end
 
 def build_payload(fguid, index, searchType, timeframe, exclude_labels, exclude_folders, lguid = "", label = "")
-
+    
   payload = ""
   payload += "assignedFolder:(#{fguid})"   if index == 0
   payload += "containingFolder:(#{fguid})" if index != 0
   payload += "folderType:(Default)"
   payload += "-containingFolder:(#{exclude_folders.join(" OR ")})" unless exclude_folders.empty?
-  payload += "createDate:[#{timeframe["start"]} TO #{timeframe["end"]}]" if searchType.eql?("New Issue") || searchType.eql?("Open") || searchType.eql?("Actionable")
+  payload += "createDate:[#{timeframe['start']} TO #{timeframe['end']}]" if searchType.eql?("New Issue") || searchType.eql?("Open") || searchType.eql?("Actionable")
   payload += "status:(Open)" if searchType.eql?("Open") || searchType.eql?("Actionable")
   payload += "status:(Resolved)" if searchType.eql?("Resolved")
   payload += "lastResolvedDate:[#{timeframe["start"]} TO #{timeframe["end"]}]" if searchType.eql?("Resolved")
@@ -98,17 +98,14 @@ def build_payload(fguid, index, searchType, timeframe, exclude_labels, exclude_f
   if exclude_labels.empty?
     if label.eql?("No Labels")
       payload += "-aggregatedLabels:(#{lguid})"
-    elsif !label.eql?("")
-      payload += "aggregatedLabels:(#{lguid})"
+    elsif label.eql?("")
     elsif !label.eql?("All Labels")
       payload += "aggregatedLabels:(#{lguid})"
     end
   else
     if label.eql?("No Labels")
       payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")} OR #{lguid})"
-    elsif !label.eql?("")
-      payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")})"
-      payload += "aggregatedLabels:(#{lguid})"
+    elsif label.eql?("")
     elsif !label.eql?("All Labels")
       payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")})"
       payload += "aggregatedLabels:(#{lguid})"
@@ -129,7 +126,7 @@ def build_query(payload)
   #Add sort
   sort = "sort=lastUpdatedConversationDate+desc"
   sort = CGI.escape sort
-
+    
   return "/issues?q=#{payload.gsub("+","%20")}&#{sort}"
 end
 
@@ -139,10 +136,12 @@ def new_issues_search(team, reqs)
 
       payload = build_payload(guid, index, "New Issue", range, reqs['ignoreLabels'], reqs['ignoreFolders'])
 
+      #puts payload
+        
       issue = get(build_query(payload))
 
       puts "issues: #{issue['totalNumberFound']}"
-
+        
       $results_array.push(create_hash(timeKey, team))
 
     end
@@ -153,11 +152,12 @@ def open_issues_search(team, reqs)
   reqs['folders'].each_with_index do |guid, index|
     @dateHash.each do |timeKey, range|
       @labelHash.each do |label, lguid|
+          
         payload = build_payload(guid, index, "Open", range, reqs['ignoreLabels'], reqs['ignoreFolders'], lguid, label)
-
+                  
         issue = get(build_query(payload))
 
-        puts "issues: #{issue['totalNumberFound']}"
+         puts "issues: #{issue['totalNumberFound']}"
 
         $results_array.push(create_hash(timeKey, team))
       end
@@ -255,20 +255,23 @@ begin
     @dateHash.each do |timeKey, timeRange|
       @labelHash.each do |labelKey, label|
         ["New Issue", "Open", "Resolved", "Actionable"].each do |searchType|
-          #payload = build_payload(guid, index, "Actionable", range, reqs['ignoreLabels'], reqs['ignoreFolders'], lguid, label)
-          #issue = get(build_query(payload))
-          #puts "issues: #{issue['totalNumberFound']}"
-          #$results_array.push(create_hash(timeKey, team))
+            
+          puts "#{team} --- #{timeKey} --- #{timeRange} --- #{labelKey} --- #{searchType}"
+            
+          payload = build_payload(guid, index, "Actionable", range, reqs['ignoreLabels'], reqs['ignoreFolders'], lguid, label)
+          issue = get(build_query(payload))
+          puts "issues: #{issue['totalNumberFound']}"
+          $results_array.push(create_hash(timeKey, team))
         end
       end
     end
   end
 
   input.each do |team, reqs|
-    new_issues_search(team, reqs)
-    open_issues_search(team, reqs)
-    resolved_issues_search(team, reqs)
-    actionable_issues_search(team, reqs)
+    #new_issues_search(team, reqs)
+    #open_issues_search(team, reqs)
+    #resolved_issues_search(team, reqs)
+    #actionable_issues_search(team, reqs)
     #sev2_issues_search(dateArray, reqs['folders'], reqs['ignoreLabels'], reqs['ignoreFolders'])
   end
 
