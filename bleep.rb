@@ -67,13 +67,13 @@ def create_time_ranges
   bry   = DateTime.now.strftime("%Y-01-01T08:00:00.000Z")
   bot   = "*"
 
- return { '24h' => {'start' => day1 ,  'end' => today},
+ return { 'bot' => {'start' => bot  ,  'end' => today},
+          '24h' => {'start' => day1 ,  'end' => today},
           '1wk' => {'start' => week1,  'end' => today},
           '2wk' => {'start' => week2,  'end' => today},
           '3wk' => {'start' => week3,  'end' => today},
           '4wk' => {'start' => week4,  'end' => today},
-          'byr' => {'start' => bry  ,  'end' => today},
-          'bot' => {'start' => bot  ,  'end' => today}}
+          'byr' => {'start' => bry  ,  'end' => today}}
 end
 
 def create_label_combos
@@ -128,73 +128,6 @@ def build_query(payload)
   sort = CGI.escape sort
     
   return "/issues?q=#{payload.gsub("+","%20")}&#{sort}"
-end
-
-def new_issues_search(team, reqs)
-  reqs['folders'].each_with_index do |guid, index|
-    @dateHash.each do |timeKey, range|
-
-      payload = build_payload(guid, index, "New Issue", range, reqs['ignoreLabels'], reqs['ignoreFolders'])
-
-      #puts payload
-        
-      issue = get(build_query(payload))
-
-      puts "issues: #{issue['totalNumberFound']}"
-        
-      $results_array.push(create_hash(timeKey, team))
-
-    end
-  end
-end
-
-def open_issues_search(team, reqs)
-  reqs['folders'].each_with_index do |guid, index|
-    @dateHash.each do |timeKey, range|
-      @labelHash.each do |label, lguid|
-          
-        payload = build_payload(guid, index, "Open", range, reqs['ignoreLabels'], reqs['ignoreFolders'], lguid, label)
-                  
-        issue = get(build_query(payload))
-
-         puts "issues: #{issue['totalNumberFound']}"
-
-        $results_array.push(create_hash(timeKey, team))
-      end
-    end
-  end
-end
-
-def resolved_issues_search(team, reqs)
-  reqs['folders'].each_with_index do |guid, index|
-    @dateHash.each do |timeKey, range|
-      @labelHash.each do |label, lguid|
-        payload = build_payload(guid, index, "Resolved", range, reqs['ignoreLabels'], reqs['ignoreFolders'], lguid, label)
-
-        issue = get(build_query(payload))
-
-        puts "issues: #{issue['totalNumberFound']}"
-
-        $results_array.push(create_hash(timeKey, team))
-      end
-    end
-  end
-end
-
-def actionable_issues_search(team, reqs)
-  reqs['folders'].each_with_index do |guid, index|
-    @dateHash.each do |timeKey, range|
-      @labelHash.each do |label, lguid|
-        payload = build_payload(guid, index, "Actionable", range, reqs['ignoreLabels'], reqs['ignoreFolders'], lguid, label)
-
-        issue = get(build_query(payload))
-
-        puts "issues: #{issue['totalNumberFound']}"
-
-        $results_array.push(create_hash(timeKey, team))
-      end
-    end
-  end
 end
 
 def sev2_issues_search(dates, folders, exclude_labels, exclude_folders)
@@ -252,27 +185,21 @@ begin
   #TODO: for each team folder guid, i need the folder name. Change input to meekers input
 
   input.each do |team, reqs|
-    @dateHash.each do |timeKey, timeRange|
-      @labelHash.each do |labelKey, label|
-        ["New Issue", "Open", "Resolved", "Actionable"].each do |searchType|
-            
-          puts "#{team} --- #{timeKey} --- #{timeRange} --- #{labelKey} --- #{searchType}"
-            
-          payload = build_payload(guid, index, "Actionable", range, reqs['ignoreLabels'], reqs['ignoreFolders'], lguid, label)
-          issue = get(build_query(payload))
-          puts "issues: #{issue['totalNumberFound']}"
-          $results_array.push(create_hash(timeKey, team))
+      reqs['folders'].each_with_index do |folderGuid, index|
+        @dateHash.each do |timeKey, timeRange|
+          @labelHash.each do |labelKey, labelGuid|
+            ["New Issue", "Open", "Resolved", "Actionable"].each do |searchType|
+
+              puts "#{team} --- #{timeKey} --- #{timeRange} --- #{labelKey} --- #{searchType}"
+
+              payload = build_payload(folderGuid, index, searchType, timeRange, reqs['ignoreLabels'], reqs['ignoreFolders'], labelGuid, labelKey)
+              issue = get(build_query(payload))
+              puts "issues: #{issue['totalNumberFound']}"
+              $results_array.push(create_hash(timeKey, team))
+            end
+          end
         end
       end
-    end
-  end
-
-  input.each do |team, reqs|
-    #new_issues_search(team, reqs)
-    #open_issues_search(team, reqs)
-    #resolved_issues_search(team, reqs)
-    #actionable_issues_search(team, reqs)
-    #sev2_issues_search(dateArray, reqs['folders'], reqs['ignoreLabels'], reqs['ignoreFolders'])
   end
 
   #Do Overall searches
