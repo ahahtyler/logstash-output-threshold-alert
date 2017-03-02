@@ -1,185 +1,41 @@
 <?xml version="1.0"?>
 <data>
-    <config>
-        <ignored_labels>
-            <label name="SupBT"/>
-            <label name="SupBT-Handoff"/>
-            <label name="SupBT-DocExternal"/>
-            <label name="SupBT-DocInternal"/>
-            <label name="SupBT-FollowUp"/>
-        </ignored_labels>
-    </config>
-    <team_config>
-        <service_line name="Apollo">
-            <folder>
-                <name>Deploy (Top-Level)</name>
-                <guid>7ff90255-3307-4bcc-b7da-bd160e154d45</guid>
-            </folder>
-            <team name="ACDC">
-                <folder>
-                    <name>ApolloACDC</name>
-                    <guid>684c781a-c957-4caa-9fb2-3632a0678062</guid>
-                </folder>
-            </team>
-            <team name="CloudScape">
-                <folder>
-                    <name>ApolloCS</name>
-                    <guid>f8f2a971-ecdb-4551-aed1-744f9204d378</guid>
-                </folder>
-            </team>
-            <team name="Shim">
-                <folder>
-                    <name>ApolloShim</name>
-                    <guid>41c88c41-1ded-4eff-8944-2f4f8f652e52" </guid>
-                </folder>
-            </team>
-            <team name="Quilt">
-                <folder>
-                    <name>OSPatching</name>
-                    <guid>be89f3a3-a689-44f4-a38d-f620da31c5f7</guid>
-                </folder>
-            </team>
-        </service_line>
-        <service_line name="Brazil">
-            <folder>
-                <name>Brazil &amp; Packaging (Toplevel)</name>
-                <guid>beb30bde-6b30-44d9-ba43-3a8302f041c4</guid>
-            </folder>
-            <team name="Packaging">
-                <folder>
-                    <name>BATS</name>
-                    <guid>44b8e42c-488b-4653-9b92-15aa745833ee</guid>>
-                </folder>
-                <folder>
-                    <name>Gated Garden</name>
-                    <guid>b867b140-a87d-4ad7-9d40-408195ebf5a6</guid>
-                </folder>
-            </team>
-            <team name="BX">
-                <folder>
-                    <name>Build Execution</name>
-                    <guid>93d8e9e5-2941-4a8c-8c05-e970650934df</guid>
-                </folder>
-                <folder>
-                    <name>BX (Top-level)</name>
-                    <guid>fee04eed-81a5-4d07-8816-8329378d9464</guid>
-                </folder>
-            </team>
-            <team name="PBS">
-                <folder>
-                    <name>PBS</name>
-                    <guid>29c3a60e-8aac-42e1-97d2-a4275d396f97</guid>
-                </folder>
-                <folder>
-                    <name>PBS (Top-level)</name>
-                    <guid>3bf55cba-f91a-41f1-81c3-903473f1a91e</guid>
-                </folder>
-            </team>
-            <team name="iBuild">
-                <folder>
-                    <name>iBuild</name>
-                    <guid>a68b7152-bcd6-4861-9577-6bb4855e1813</guid>
-                </folder>
-                <folder>
-                    <name>xcode (Top-level)</name>
-                    <guid>917514b8-7229-4ce9-ad66-bc4548c00cba</guid>
-                </folder>
-                <folder>
-                    <name>Electric Company</name>
-                    <guid>928c782d-6ff3-4a9c-8a82-c3c64540e07b</guid>
-                </folder>
-                <folder>
-                    <name>XCode Build Tool</name>
-                    <guid>ba14401b-41c7-449e-8bb8-53c3ebf7f697</guid>
-                </folder>
-            </team>
-        </service_line>
-        <service_line name="Swim">
-            <team name="SIM">
-                <folder>
-                    <name>SIM</name>
-                    <guid>46102997-b1e6-409c-bcb4-522b7fa54a11</guid>
-                </folder>
-            </team>
-            <team name="TT">
-                <folder>
-                    <name>CTI</name>
-                    <guid>a0d8da28-4898-4d5c-9808-0949755f445f</guid>
-                </folder>
-                <folder>
-                    <name>Fluxo</name>
-                    <guid>4d3a17b5-a0c9-4ee7-a8d9-1ac37c56f4d9</guid>
-                </folder>
-                <folder>
-                    <name>Remedy</name>
-                    <guid>dd16c31c-3f9b-4a73-9733-0174a68f66f2</guid>
-                </folder>
-                <folder>
-                    <name>Trouble Ticketing</name>
-                    <guid>97cf40b4-f8e2-498c-afd1-cc9a2a20f9a4</guid>
-                </folder>
-                <folder>
-                    <name>Water</name>
-                    <guid>b7a0e9dd-6153-4425-8013-9ce3bf810747</guid>
-                </folder>
-                <folder>
-                    <name>WFA Web Service</name>
-                    <guid>961d68c9-4363-4fda-a55a-396a366815e4</guid>
-                </folder>
-                <folder>
-                    <name>TTCopySIM</name>
-                    <guid>9fad52e9-8d1f-40cf-8d0a-8005d932ed85</guid>
-                </folder>
-            </team>
-            <team name="Swim (Other)">
-                <folder>
-                    <name>Swim (Top-level)</name>
-                    <guid>8973bac0-f2a7-45d7-84d1-1502f417a6f9</guid>
-                </folder>
-                <folder>
-                    <name>General Questions</name>
-                    <guid>08566be8-35ad-42d0-a5e4-c3e3fd60bd51</guid>
-                </folder>
-                <folder>
-                    <name>JIRA</name>
-                    <guid>0cc61cee-a8ff-4f91-86c2-85af70aa2be9</guid>
-                </folder>
-                <folder>
-                    <name>Migration Store (Top-level)</name>
-                    <guid>9828df45-2acf-40d2-a7c8-e5f9d83a8194</guid>
-                </folder>
-                <folder>
-                    <name>Migration Store Jira</name>
-                    <guid>541fc28b-b9de-48f1-b8cf-2903f1d15ced</guid>
-                </folder>
-                <folder>
-                    <name>AWS Roadmap (Top-level)</name>
-                    <guid>9828df45-2acf-40d2-a7c8-e5f9d83a8194</guid>
-                </folder>
-            </team>
-        </service_line>
-        <service_line name="QTT">
-            <folder>
-                <name>Quality Tools</name>
-                <guid>1f08fff9-4bb1-4fbd-9682-989fd73e5538</guid>
-            </folder>
+  <label_config>
+    <supbt_labels>
+      <label guid="supbt-guid"/>
+      <label guid="handoff-guid"/>
+      <label guid="syseng-guid"/>
+    </supbt_labels>
+  </label_config>
 
-            <team name="T2">
-                <folder>
-                    <name>Canary API Coverage</name>
-                    <guid>321886e7-0bfc-4d35-b0c3-4e2dfccdd00f</guid>
-                </folder>
-                <folder>
-                    <name>TPSGenerator</name>
-                    <guid>381dd22a-7ec4-47b8-ba30-b9feb3eff9a7</guid>
-                </folder>
-            </team>
-            <team name="TEAR">
-                <folder>
-                    <name>Test Execution and Reporting (ToD &amp; Tim)</name>
-                    <guid>a827f40d-110f-4648-b180-be7b1a9384af</guid>
-                </folder>
-            </team>
-        </service_line>
-    </team_config>
+  <team_config>
+    <service_line name="SWIM">
+      <folder_group name="SIM">
+        <guid>46102997-b1e6-409c-bcb4-522b7fa54a11</guid>
+      </folder_group>
+      <folder_group name="TT">
+        <guid>a0d8da28-4898-4d5c-9808-0949755f445f</guid>
+        <guid>4d3a17b5-a0c9-4ee7-a8d9-1ac37c56f4d9</guid>
+        <guid>dd16c31c-3f9b-4a73-9733-0174a68f66f2</guid>
+        <guid>97cf40b4-f8e2-498c-afd1-cc9a2a20f9a4</guid>
+        <guid>b7a0e9dd-6153-4425-8013-9ce3bf810747</guid>
+        <guid>961d68c9-4363-4fda-a55a-396a366815e4</guid>
+        <guid>9fad52e9-8d1f-40cf-8d0a-8005d932ed85</guid>
+      </folder_group>
+      <folder_group name="Swim (Other)">
+        <guid>8973bac0-f2a7-45d7-84d1-1502f417a6f9</guid>
+        <guid>08566be8-35ad-42d0-a5e4-c3e3fd60bd51</guid>
+        <guid>0cc61cee-a8ff-4f91-86c2-85af70aa2be9</guid>
+        <guid>541fc28b-b9de-48f1-b8cf-2903f1d15ced</guid>
+        <guid>9828df45-2acf-40d2-a7c8-e5f9d83a8194</guid>
+      </folder_group>
+      <ignore_folders>
+        <guid>sample-guid</guid>
+      </ignore_folders>
+      <ignore_labels>
+        <guid>sample-guid</guid>
+      </ignore_labels>
+    </service_line>
+  </team_config>
+
 </data>
