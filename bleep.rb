@@ -86,11 +86,10 @@ end
 
 def has_parent_folder?(guid)
   folder = get("/folders/#{guid}")
-  puts folder
-  folder.nil? ? true : false
+  folder['parent'].nil? ? true : false
 end
 
-def build_payload(fguid, searchType, timeframe, reqs, lguid)
+def build_payload(fguid, searchType, timeframe, reqs, label_key, label_guid)
 
   exclude_labels, exclude_folders = reqs['ignoreLabels'], reqs['ignoreFolders']
   payload = ""
@@ -111,25 +110,24 @@ def build_payload(fguid, searchType, timeframe, reqs, lguid)
   payload += "status:(Resolved)" if ["Resolved"].include?searchType
 
   #Optional fields
-  payload += "-containingFolder:(#{exclude_folders.join(" OR ")})" unless exclude_folders.empty?
+  payload += "-containingFolder:(#{exclud_labels.join(" OR ")})" unless exclude_labels.empty?
 
   #Set up labels
-  payload += "aggregatedLabels:(#{lguid})" if ["supbt", "handoff", "syseng"].include?(guid_label)
+  payload += "aggregatedLabels:(#{label_guid})" if ["SupBT", "Handoff", "SysEng"].include?(label_key)
 
-  if excluded_labels.empty?
-    if guid_label.eql?("No Labels")
-      payload += "-aggregatedLabels:(#{lguid})"
+  if exclude_labels.empty?
+    if label_key.eql?("No Labels")
+      payload += "-aggregatedLabels:(#{label_guid})"
     end
   else
-    if guid_label.eql?("No Labels")
-      payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")} OR #{lguid})"
+    if label_key.eql?("No Labels")
+      payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")} OR #{label_guid})"
     else
       payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")}"
     end
   end
 
   payload += "next_step.owner:role\\:resolver" if searchType.eql?("Actionable")
-
   return payload
 end
 
@@ -184,6 +182,12 @@ def read_input
   return team_hash
 end
 
+def backoff
+   @backoff = 0  if @backoff.nil?
+   @backoff += 1 if @backoff < 10
+   sleep @backoff ** 2
+end
+    
 begin
   #Read in input
   input = read_input
@@ -199,17 +203,17 @@ begin
       dateHash.each do |timeKey, timeRange|
         labelHash.each do |labelKey, labelGuid|
           ["New Issue", "Open", "Resolved", "Actionable"].each do |searchType|
-
-            puts "#{team} --- #{timeKey} --- #{timeRange} --- #{labelKey} --- #{searchType}"
-
-            payload = build_payload(folderGuid, searchType, timeRange, reqs, labelGuid)
-
-            issue = get(build_query(payload))
-
+            #puts "#{team} --- #{timeKey} --- #{timeRange} --- #{labelKey} --- #{searchType}"
+            payload = build_payload(folderGuid, searchType, timeRange, reqs, labelKey, labelGuid)
+            begin
+                issue = get(build_query(payload))
+                raise if issue['message'].eql?("Rate exceeded")
+            rescue
+                backoff
+                retry  
+            end
             puts "issues: #{issue['totalNumberFound']}"
-
             $results_array.push(create_hash(timeKey, team))
-
           end
         end
       end
@@ -221,5 +225,5 @@ begin
     #Write to ElasticSearch
 
 rescue Exception => e
-  puts e
+  puts "Error"
 end
