@@ -4,6 +4,7 @@ require 'json'
 require 'amazon/cacerts'
 require 'amazon/sim'
 require 'date'
+require 'nokogiri'
 
 $host        = 'maxis-service-prod-pdx.amazon.com'
 $scheme      = 'https'
@@ -22,8 +23,8 @@ $credentials = Aws::OdinCredentials.new($materialSet)
 $signer      = Aws::Signers::V4.new($credentials, 'sim', $region)
 
 $run_id          = SecureRandom.uuid.gsub('-','')
+$input_file_path = "C:\\Users\\Tyler\\Desktop\\input.xml"
 $results_array   = Array.new
-$input_directory = '/home/stigty/SupBT-Metrics/src/SupBT-Metrics/input/'
 
 def sign(request)
   seahorseRequest = Seahorse::Client::Http::Request.new(
@@ -71,27 +72,14 @@ def create_time_ranges
            'byr' => {'start' => bry  ,  'end' => today}}
 end
 
-def create_label_combos
-  $supBT_labels    = {
-      "SupBT"   => "a5739bf8-3339-4a66-94d9-484b5287dfb9",
-      "Handoff" => "f15cb04c-633f-4a42-95f5-110b99b6cbc8",
-      "SysEng"  => "6231cdee-5f96-45f4-83ec-9daec101f8fd"
-  }
-
-  label_combos = $supBT_labels
-  label_combos["No Labels"]  = $supBT_labels.values.join(" OR ")
-  label_combos["All Labels"] = ""
-  return label_combos
-end
-
 def has_parent_folder?(guid)
   folder = get("/folders/#{guid}")
   folder['parent'].nil? ? true : false
 end
 
-def build_payload(fguid, searchType, timeframe, reqs, label_key, label_guid)
+def build_payload(fguid, searchType, timeframe, attrs, label_key, label_guid)
 
-  exclude_labels, exclude_folders = reqs['ignoreLabels'], reqs['ignoreFolders']
+  exclude_labels, exclude_folders = attrs['ignoreL'], attrs['ignoreF']
   payload = ""
 
   #Constant fields across all searches
@@ -110,7 +98,7 @@ def build_payload(fguid, searchType, timeframe, reqs, label_key, label_guid)
   payload += "status:(Resolved)" if ["Resolved"].include?searchType
 
   #Optional fields
-  payload += "-containingFolder:(#{exclud_labels.join(" OR ")})" unless exclude_labels.empty?
+  payload += "-containingFolder:(#{exclude_folders.join(" OR ")})" unless exclude_folders.empty?
 
   #Set up labels
   payload += "aggregatedLabels:(#{label_guid})" if ["SupBT", "Handoff", "SysEng"].include?(label_key)
@@ -142,12 +130,6 @@ def build_query(payload)
   return "/issues?q=#{payload.gsub("+","%20")}&#{sort}"
 end
 
-def sev2_issues_search(dates, folders, exclude_labels, exclude_folders)
-  #Search Top level folder
-  #Include subfolder
-  #Search for sev2.
-end
-
 def create_hash(team, dateKey)
   #{
   #    count       => int     (1,2,3, etc...)
@@ -162,67 +144,92 @@ def create_hash(team, dateKey)
   #}
 end
 
-def read_file(filename)
-  input_array = Array.new
-  File.open("#{$input_directory}/#{filename}", "r") do |f|
-    f.each_line do |line|
-      input_array.push(line.strip)
-    end
-  end
-  return input_array
+def create_label_combos
+  supbt_labels = Hash.new
+
+  label_block = @doc.css("label_config/supbt_labels/label")
+  label_block.map {|node|  supbt_labels[node["name"]] = node["guid"]}
+
+  supbt_labels["No Labels"]  = supbt_labels.values.join(" OR ")
+  supbt_labels["All Labels"] = ""
+
+  return supbt_labels
 end
 
-def read_input
-  team_hash = Hash.new{|hsh,key| hsh[key] = {} }
-  Dir.foreach($input_directory) do |item|
-    next if item == '.' or item == '..'
-    file_parse = item.split('-')
-    team_hash[file_parse[0]].store file_parse[1][0..-5],read_file(item)
+def create_team_list
+  #read team info
+  teamHash = Hash.new()
+
+  team_block = @doc.css("team_config/service_line")
+  team_block.map do |service|
+    #Folder guids
+    subfolderHash = Hash.new()
+    service.css("folder_group").map do |subfolder|
+      guidArray = Array.new()
+      subfolder.css("guid").map do |guid|
+        guidArray.push(guid.children.to_s)
+        #puts " #{service["name"]} --- #{subfolder["name"]} --- #{guid.children}"
+      end
+      subfolderHash[subfolder["name"]] = guidArray
+    end
+
+    ignoreFolderArrray = Array.new()
+    ignoreLabelsArray = Array.new()
+
+    service.css("ignore").map do |item|
+      ignoreFolderArrray.push(item["guid"]) if item["type"].eql?("folder")
+      ignoreLabelsArray.push(item["guid"])  if item["type"].eql?("label")
+    end
+
+    teamHash[service["name"]] = {'groups' => subfolderHash, 'ignoreF' => ignoreFolderArrray, 'ignoreL' => ignoreLabelsArray}
   end
-  return team_hash
+  return teamHash
 end
 
 def backoff
-   @backoff = 0  if @backoff.nil?
-   @backoff += 1 if @backoff < 10
-   sleep @backoff ** 2
+  @backoff = 0  if @backoff.nil?
+  @backoff += 1 if @backoff < 10
+  sleep @backoff ** 2
 end
-    
+
+def call_maxis(payload)
+  begin
+    issue = get(build_query(payload))
+    raise if issue['message'].eql?("Rate exceeded")
+  rescue
+    backoff
+    retry
+  end
+  puts "issues: #{issue['totalNumberFound']}"
+end
+
 begin
-  #Read in input
-  input = read_input
+  @doc = Nokogiri::XML(File.open($file_path))
 
-  #determine date array
-  dateHash = create_time_ranges
-
-  #determine label combos
   labelHash = create_label_combos
 
-  input.each do |team, reqs|
-    reqs['folders'].each_with_index do |folderGuid, index|
-      dateHash.each do |timeKey, timeRange|
-        labelHash.each do |labelKey, labelGuid|
-          ["New Issue", "Open", "Resolved", "Actionable"].each do |searchType|
-            #puts "#{team} --- #{timeKey} --- #{timeRange} --- #{labelKey} --- #{searchType}"
-            payload = build_payload(folderGuid, searchType, timeRange, reqs, labelKey, labelGuid)
-            begin
-                issue = get(build_query(payload))
-                raise if issue['message'].eql?("Rate exceeded")
-            rescue
-                backoff
-                retry  
+  dateHash = create_time_ranges
+
+  teamHash = create_team_list
+
+  teamHash.each do |team, attrs|
+    attrs['groups'].each do |subFolder, subFolderGuids|
+      subFolderGuids.each do |subFolderGuid|
+        dateHash.each do |timeKey, timeRange|
+          labelHash.each do |labelName, labelGuid|
+            ["New Issue", "Open", "Resolved", "Actionable"].each do |searchType|
+              payload = build_payload(subFolderGuid, searchType, timeRange, attrs, labelName, labelGuid)
+              call_maxis(payload)
             end
-            puts "issues: #{issue['totalNumberFound']}"
-            $results_array.push(create_hash(timeKey, team))
           end
         end
       end
     end
   end
 
-    #Write to CSV
+  #Write to CSV
 
-    #Write to ElasticSearch
+  #Write to ElasticSearch
 
 rescue Exception => e
   puts "Error"
