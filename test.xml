@@ -1,41 +1,49 @@
 <?xml version="1.0"?>
 <data>
+
   <label_config>
     <supbt_labels>
-      <label guid="supbt-guid"/>
-      <label guid="handoff-guid"/>
-      <label guid="syseng-guid"/>
+      <label name="SupBT"   guid = "asdfwa"/>
+      <label name="Handoff" guid = "asdfda"/>
+      <label name="SysEng"  guid = "asdfas"/>
     </supbt_labels>
   </label_config>
 
-  <team_config>
-    <service_line name="SWIM">
-      <folder_group name="SIM">
-        <guid>46102997-b1e6-409c-bcb4-522b7fa54a11</guid>
-      </folder_group>
-      <folder_group name="TT">
-        <guid>a0d8da28-4898-4d5c-9808-0949755f445f</guid>
-        <guid>4d3a17b5-a0c9-4ee7-a8d9-1ac37c56f4d9</guid>
-        <guid>dd16c31c-3f9b-4a73-9733-0174a68f66f2</guid>
-        <guid>97cf40b4-f8e2-498c-afd1-cc9a2a20f9a4</guid>
-        <guid>b7a0e9dd-6153-4425-8013-9ce3bf810747</guid>
-        <guid>961d68c9-4363-4fda-a55a-396a366815e4</guid>
-        <guid>9fad52e9-8d1f-40cf-8d0a-8005d932ed85</guid>
-      </folder_group>
-      <folder_group name="Swim (Other)">
-        <guid>8973bac0-f2a7-45d7-84d1-1502f417a6f9</guid>
-        <guid>08566be8-35ad-42d0-a5e4-c3e3fd60bd51</guid>
-        <guid>0cc61cee-a8ff-4f91-86c2-85af70aa2be9</guid>
-        <guid>541fc28b-b9de-48f1-b8cf-2903f1d15ced</guid>
-        <guid>9828df45-2acf-40d2-a7c8-e5f9d83a8194</guid>
-      </folder_group>
+  <teams>
+    <service name="SWIM">
+      <group name="SIM">
+        <folder>
+          <name>SIM</name>
+          <guid>aaaaaaaaa-b1e6-409c-bcb4-522b7fa54a11</guid>
+        </folder>
+      </group>
+      <group name="TT">
+        <folder>
+          <name>Fluxo</name>
+          <guid>bbbbbbbbb-b1e6-409c-bcb4-522b7fa54a11</guid>
+        </folder>
+        <folder>
+          <name>Water</name>
+          <guid>ccccccccc-b1e6-409c-bcb4-522b7fa54a11</guid>
+        </folder>
+        <folder>
+          <name>CTI</name>
+          <guid>ddddddddd-b1e6-409c-bcb4-522b7fa54a11</guid>
+        </folder>
+      </group>
+      <group name="Swim (Other)">
+        <folder>
+          <name>Jira</name>
+          <guid>eeeeeeeee-b1e6-409c-bcb4-522b7fa54a11</guid>
+        </folder>
+      </group>
       <ignore_folders>
-        <guid>sample-guid</guid>
+        <guid>asdfasdfasdfsadfsadfsdfsadfsdf</guid>
       </ignore_folders>
       <ignore_labels>
-        <guid>sample-guid</guid>
+        <guid>asdfasdfasdfadsfasdfadsf</guid>
       </ignore_labels>
-    </service_line>
-  </team_config>
+    </service>
+  </teams>
 
 </data>
