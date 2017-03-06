@@ -1,57 +1,15 @@
-require 'aws-sdk-core'
-require 'aws/odin_credentials'
-require 'json'
-require 'amazon/cacerts'
-require 'amazon/sim'
 require 'date'
 require 'nokogiri'
+require 'C:\\Users\\Tyler\\Desktop\\meh\\folder.rb'
+require 'C:\\Users\\Tyler\\Desktop\\meh\\service_line.rb'
+require 'C:\\Users\\Tyler\\Desktop\\maxis_connection.rb'
 
-$host        = 'maxis-service-prod-pdx.amazon.com'
-$scheme      = 'https'
-$region      = 'us-west-2'
-$materialSet = 'com.amazon.credentials.isengard.968648960172.user/stigty'
+@host        = 'maxis-service-prod-pdx.amazon.com'
+@scheme      = 'https'
+@region      = 'us-west-2'
+@materialSet = 'com.amazon.credentials.isengard.968648960172.user/stigty'
 
-$conn             = Net::HTTP.new($host, 443)
-$conn.use_ssl     = true
-$conn.verify_mode = OpenSSL::SSL::VERIFY_PEER
-
-store = OpenSSL::X509::Store.new
-store.set_default_paths
-$conn.cert_store  = store
-
-$credentials = Aws::OdinCredentials.new($materialSet)
-$signer      = Aws::Signers::V4.new($credentials, 'sim', $region)
-
-$run_id          = SecureRandom.uuid.gsub('-','')
-$input_file_path = "C:\\Users\\Tyler\\Desktop\\input.xml"
-$results_array   = Array.new
-
-def sign(request)
-  seahorseRequest = Seahorse::Client::Http::Request.new(
-      :endpoint => "#{$scheme}://#{$host}#{request.path}",
-      :http_method => request.method,
-      :body => request.body
-  )
-  request.each_header {|key,value| seahorseRequest.headers[key] = value}
-  $signer.sign(seahorseRequest)
-  seahorseRequest.headers.each {|key,value| request[key] = value}
-end
-
-def parse_response(response)
-  if response.header['Content-Encoding'].eql?('gzip') then
-    gz = Zlib::GzipReader.new(StringIO.new(response.body))
-    response = JSON.parse(gz.read)
-  else
-    response = JSON.parse(response.body)
-  end
-  return response
-end
-
-def get(path)
-  request = Net::HTTP::Get.new(path)
-  sign(request)
-  return parse_response($conn.request(request))
-end
+@input_file_path = "C:\\Users\\Tyler\\Desktop\\input.xml"
 
 def create_time_ranges
   today = DateTime.now.strftime("%Y-%m-%dT08:00:00.000Z")
@@ -72,78 +30,6 @@ def create_time_ranges
            'byr' => {'start' => bry  ,  'end' => today}}
 end
 
-def has_parent_folder?(guid)
-  folder = get("/folders/#{guid}")
-  folder['parent'].nil? ? true : false
-end
-
-def build_payload(fguid, searchType, timeframe, attrs, label_key, label_guid)
-
-  exclude_labels, exclude_folders = attrs['ignoreL'], attrs['ignoreF']
-  payload = ""
-
-  #Constant fields across all searches
-  payload += "folderType:(Default)"
-
-  #Setting folder search field
-  has_parent_folder?(fguid) ? payload += "assignedFolder:" : payload += "containingFolder:"
-  payload += "(#{fguid})"
-
-  #Setting Time Range
-  searchType.eql?("Resolved") ? payload += "lastResolvedDate:" : payload += "createDate:"
-  payload += "[#{timeframe['start']} TO #{timeframe['end']}]"
-
-  #Set Status
-  payload += "status:(Open)"     if ["Open", "Actionable"].include?(searchType)
-  payload += "status:(Resolved)" if ["Resolved"].include?searchType
-
-  #Optional fields
-  payload += "-containingFolder:(#{exclude_folders.join(" OR ")})" unless exclude_folders.empty?
-
-  #Set up labels
-  payload += "aggregatedLabels:(#{label_guid})" if ["SupBT", "Handoff", "SysEng"].include?(label_key)
-
-  if exclude_labels.empty?
-    if label_key.eql?("No Labels")
-      payload += "-aggregatedLabels:(#{label_guid})"
-    end
-  else
-    if label_key.eql?("No Labels")
-      payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")} OR #{label_guid})"
-    else
-      payload += "-aggregatedLabels:(#{exclude_labels.join(" OR ")}"
-    end
-  end
-
-  payload += "next_step.owner:role\\:resolver" if searchType.eql?("Actionable")
-  return payload
-end
-
-def build_query(payload)
-  #encode Payload
-  payload = CGI.escape payload
-
-  #Add sort
-  sort = "sort=lastUpdatedConversationDate+desc"
-  sort = CGI.escape sort
-
-  return "/issues?q=#{payload.gsub("+","%20")}&#{sort}"
-end
-
-def create_hash(team, dateKey)
-  #{
-  #    count       => int     (1,2,3, etc...)
-  #    team        => string  (Deploy, Brazil, QTT, etc...)
-  #    folder_name => string  (PBS, SIM, ACDC, etc...)
-  #    folder_guid => string  (asdf-asff-asdf, etc...)
-  #    search_type => string  (new, open, actionable, resolved)
-  #    label       => string  (supbt, handoff, none)
-  #    runid       => string  (zxcv-zxcv-xzcv, etc...)
-  #    sim_query   => string  (https://issues.amazon.com....)
-  #    timeframe   => string  (day, week1, week2, week3, week4, month, bot)
-  #}
-end
-
 def create_label_combos
   supbt_labels = Hash.new
 
@@ -157,80 +43,99 @@ def create_label_combos
 end
 
 def create_team_list
-  #read team info
-  teamHash = Hash.new()
-
-  team_block = @doc.css("team_config/service_line")
-  team_block.map do |service|
-    #Folder guids
-    subfolderHash = Hash.new()
-    service.css("folder_group").map do |subfolder|
-      guidArray = Array.new()
-      subfolder.css("guid").map do |guid|
-        guidArray.push(guid.children.to_s)
-        #puts " #{service["name"]} --- #{subfolder["name"]} --- #{guid.children}"
+  serviceArray = Array.new()
+  @doc.css("teams/service").map do |service|
+    serviceObj = ServiceLine.new(service["name"])
+    service.css("group").map do |group|
+      group.css("folder").map do |folder|
+        name, guid = folder.css("guid").children, folder.css("name").children
+        serviceObj.folders.push(Folder.new(name, guid, group["name"]))
       end
-      subfolderHash[subfolder["name"]] = guidArray
     end
-
-    ignoreFolderArrray = Array.new()
-    ignoreLabelsArray = Array.new()
-
-    service.css("ignore").map do |item|
-      ignoreFolderArrray.push(item["guid"]) if item["type"].eql?("folder")
-      ignoreLabelsArray.push(item["guid"])  if item["type"].eql?("label")
-    end
-
-    teamHash[service["name"]] = {'groups' => subfolderHash, 'ignoreF' => ignoreFolderArrray, 'ignoreL' => ignoreLabelsArray}
+    service.css("ignore_folders").map {|guid| serviceObj.ignoreFolder.push(guid.css("guid").children)}
+    service.css("ignore_labels").map  {|guid| serviceObj.ignoreLabels.push(guid.css("guid").children)}
+    serviceArray.push(serviceObj)
   end
-  return teamHash
+  return serviceArray
 end
 
-def backoff
-  @backoff = 0  if @backoff.nil?
-  @backoff += 1 if @backoff < 10
-  sleep @backoff ** 2
+def build_payload(service, folder, dateRange, labelName, labelGuid, searchType)
+
+  payload = ""
+
+  #Constant fields across all searches
+  payload += "folderType:(Default)"
+
+  #Setting folder search field
+  folder.has_parent?(@maxis) ? payload += "assignedFolder:" : payload += "containingFolder:"
+  payload += "(#{folder.guid})"
+
+  #Setting Time Range
+  searchType.eql?("Resolved") ? payload += "lastResolvedDate:" : payload += "createDate:"
+  payload += "[#{dateRange['start']} TO #{dateRange['end']}]"
+
+  #Set Status
+  payload += "status:(Open)"     if ["Open", "Actionable"].include?(searchType)
+  payload += "status:(Resolved)" if ["Resolved"].include?searchType
+
+  #Optional fields
+  payload += "-containingFolder:(#{service.ignoreFolder.join(" OR ")})" unless service.ignoreFolder.empty?
+
+  #Set up labels
+  payload += "aggregatedLabels:(#{labelGuid})" if ["SupBT", "Handoff", "SysEng"].include?(labelName)
+
+  if service.ignoreLabels.empty?
+    if labelName.eql?("No Labels")
+      payload += "-aggregatedLabels:(#{labelGuid})"
+    end
+  else
+    if labelName.eql?("No Labels")
+      payload += "-aggregatedLabels:(#{service.ignoreLabels.join(" OR ")} OR #{labelGuid})"
+    else
+      payload += "-aggregatedLabels:(#{service.ignoreLabels.join(" OR ")})"
+    end
+  end
+
+  payload += "next_step.owner:role\\:resolver" if searchType.eql?("Actionable")
+
+  return @maxis.encode(payload)
 end
 
-def call_maxis(payload)
-  begin
-    issue = get(build_query(payload))
-    raise if issue['message'].eql?("Rate exceeded")
-  rescue
-    backoff
-    retry
+def store_results(results, service, folder, searchType, labelName, query, dateKey, dateRange)
+
+end
+
+def call_maxis(service, folder)
+  @labelHash.each do |labelName, labelGuid|
+    @dateHash.each do |dateKey, dateRange|
+      @searchTypes.each do |searchType|
+        query = build_payload(service, folder, dateRange, labelName, labelGuid, searchType)
+        results = @maxis.get(query)
+        puts results['totalNumberFound']
+        store_results(results, service, folder, searchType, labelName, query, dateKey, dateRange)
+      end
+    end
   end
-  puts "issues: #{issue['totalNumberFound']}"
 end
 
 begin
-  @doc = Nokogiri::XML(File.open($file_path))
 
-  labelHash = create_label_combos
+  @maxis = MaxisConnection.new(@host, @scheme, @region, @materialSet)
+  @doc   = Nokogiri::XML(File.open(@input_file_path))
 
-  dateHash = create_time_ranges
+  @labelHash   = create_label_combos
+  @dateHash    = create_time_ranges
+  @searchTypes = ["New Issue", "Open", "Resolved", "Actionable"]
 
-  teamHash = create_team_list
+  serviceGroups = create_team_list
 
-  teamHash.each do |team, attrs|
-    attrs['groups'].each do |subFolder, subFolderGuids|
-      subFolderGuids.each do |subFolderGuid|
-        dateHash.each do |timeKey, timeRange|
-          labelHash.each do |labelName, labelGuid|
-            ["New Issue", "Open", "Resolved", "Actionable"].each do |searchType|
-              payload = build_payload(subFolderGuid, searchType, timeRange, attrs, labelName, labelGuid)
-              call_maxis(payload)
-            end
-          end
-        end
-      end
+  serviceGroups.each do |service|
+    service.folders.each do |folder|
+      call_maxis(service, folder)
     end
   end
 
-  #Write to CSV
-
-  #Write to ElasticSearch
-
 rescue Exception => e
-  puts "Error"
+  puts e.backtrace
+  puts e
 end
