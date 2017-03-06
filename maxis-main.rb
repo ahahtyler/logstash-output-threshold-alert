@@ -62,42 +62,38 @@ end
 def build_payload(service, folder, dateRange, labelName, labelGuid, searchType)
 
   payload = ""
-
-  #Constant fields across all searches
-  payload += "folderType:(Default)"
-
-  #Setting folder search field
-  folder.has_parent?(@maxis) ? payload += "assignedFolder:" : payload += "containingFolder:"
-  payload += "(#{folder.guid})"
-
-  #Setting Time Range
-  searchType.eql?("Resolved") ? payload += "lastResolvedDate:" : payload += "createDate:"
-  payload += "[#{dateRange['start']} TO #{dateRange['end']}]"
-
-  #Set Status
-  payload += "status:(Open)"     if ["Open", "Actionable"].include?(searchType)
-  payload += "status:(Resolved)" if ["Resolved"].include?searchType
-
-  #Optional fields
-  payload += "-containingFolder:(#{service.ignoreFolder.join(" OR ")})" unless service.ignoreFolder.empty?
-
-  #Set up labels
-  payload += "aggregatedLabels:(#{labelGuid})" if ["SupBT", "Handoff", "SysEng"].include?(labelName)
-
-  if service.ignoreLabels.empty?
-    if labelName.eql?("No Labels")
-      payload += "-aggregatedLabels:(#{labelGuid})"
-    end
-  else
-    if labelName.eql?("No Labels")
-      payload += "-aggregatedLabels:(#{service.ignoreLabels.join(" OR ")} OR #{labelGuid})"
-    else
-      payload += "-aggregatedLabels:(#{service.ignoreLabels.join(" OR ")})"
+  payload_fields = ["folderType", "assignedFolder", "containingFolder", "createDate", 
+                    "lastResolvedDate", "status", "-containingFolder", "aggregatedLabels",
+                    "-aggregatedLabels", "next_step.owner:role"]
+  
+  payload_fields.each do |field|
+    case field
+      when "folderType"
+        payload += "#{field}:(Default)"
+      when "assignedFolder"
+        payload += "#{field}:(#{folder.guid})" if folder.has_parent?(@maxis)
+      when "containingFolder"
+        payload += "#{field}:(#{folder.guid})" if !folder.has_parent?(@maxis)
+      when "-containingFolder"
+        payload += "#{field}:(#{service.ignoreFolder.join(" OR ")})" if !service.ignoreFolder.empty?
+      when "createDate"
+        payload += "#{field}:[#{dateRange['start']} TO #{dateRange['end']}]" if !searchType.eql?("Resolved")
+      when "lastResolvedDate"
+        payload += "#{field}:[#{dateRange['start']} TO #{dateRange['end']}]" if searchType.eql?("Resolved")
+      when "status"
+        payload += "#{field}:(Open)"     if ["Open", "Actionable"].include?(searchType)
+        payload += "#{field}:(Resolved)" if ["Resolved"].include?searchType
+      when "aggregatedLabels"
+        payload += "#{field}:(#{labelGuid})" if ["SupBT", "Handoff", "SysEng"].include?(labelName)
+      when "-aggregatedLabels"
+        payload += "#{field}:(#{labelGuid})" if service.ignoreLabels.empty? && labelName.eql?("No Labels")
+        payload += "#{field}:(#{service.ignoreLabels.join(" OR ")} OR #{labelGuid})" if !service.ignoreLabels.empty? && labelName.eql?("No Labels")
+        payload += "#{field}:(#{service.ignoreLabels.join(" OR ")})" if !service.ignoreLabels.empty? && !labelName.eql?("No Labels")
+      when "next_step.owner"
+        payload += "#{field}\\:resolver" if searchType.eql?("Actionable")
     end
   end
-
-  payload += "next_step.owner:role\\:resolver" if searchType.eql?("Actionable")
-
+  
   return @maxis.encode(payload)
 end
 
