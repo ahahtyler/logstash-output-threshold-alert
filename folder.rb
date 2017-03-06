@@ -8,9 +8,8 @@ class Folder
   end
 
   def has_parent?(maxis)
-    #folder = maxis.get("/folders/#{@guid}")
-    #folder['parent'].nil? ? true : false
-    true
+    folder = maxis.get("/folders/#{@guid}")
+    folder['parent'].nil? ? true : false
   end
 
 end
