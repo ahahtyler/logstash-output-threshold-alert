@@ -62,10 +62,10 @@ end
 def build_payload(service, folder, dateRange, labelName, labelGuid, searchType)
 
   payload = ""
-  payload_fields = ["folderType", "assignedFolder", "containingFolder", "createDate", 
+  payload_fields = ["folderType", "assignedFolder", "containingFolder", "createDate",
                     "lastResolvedDate", "status", "-containingFolder", "aggregatedLabels",
                     "-aggregatedLabels", "next_step.owner:role"]
-  
+
   payload_fields.each do |field|
     case field
       when "folderType"
@@ -93,12 +93,24 @@ def build_payload(service, folder, dateRange, labelName, labelGuid, searchType)
         payload += "#{field}\\:resolver" if searchType.eql?("Actionable")
     end
   end
-  
+
   return @maxis.encode(payload)
 end
 
-def store_results(results, service, folder, searchType, labelName, query, dateKey, dateRange)
-
+def store_results(results, service, folder, searchType, labelName, query, dateKey)
+  puts results['totalNumberFound']
+  es_data_point = { 'count' => results['totalNumberFound'],
+                    'team'  => service.name,
+                    'folder_group' => folder.group,
+                    'folder_name' => folder.name,
+                    'folder_guid' => folder.guid,
+                    'search_type' => searchType,
+                    'label' => labelName,
+                    'maxis_query' => query,
+                    'sim_query' => 'not yet',
+                    'timeframe' => dateKey,
+                    'run_id' => @run_id}
+  @results.push(es_data_point)
 end
 
 def call_maxis(service, folder)
@@ -107,14 +119,16 @@ def call_maxis(service, folder)
       @searchTypes.each do |searchType|
         query = build_payload(service, folder, dateRange, labelName, labelGuid, searchType)
         results = @maxis.get(query)
-        puts results['totalNumberFound']
-        store_results(results, service, folder, searchType, labelName, query, dateKey, dateRange)
+        store_results(results, service, folder, searchType, labelName, query, dateKey)
       end
     end
   end
 end
 
 begin
+
+  @results = Array.new()
+  @run_id  = SecureRandom.uuid.gsub('-','')
 
   @maxis = MaxisConnection.new(@host, @scheme, @region, @materialSet)
   @doc   = Nokogiri::XML(File.open(@input_file_path))
