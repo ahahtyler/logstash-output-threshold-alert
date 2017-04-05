@@ -1,0 +1,19 @@
+require 'nokogiri'
+
+@doc = Nokogiri::XML(File.open("C:\\Users\\Tyler\\Desktop\\work\\input.xml"))
+
+resolverGroups = Hash.new()
+
+@doc.css("teams/service").map do |service|
+  service.css("group").map do |group|
+    group.css("folder").map do |folder|
+      folder.css("resolvers").search('value').each do |value| 
+        (defined?  resolver) ? resolver << value.inner_html : resolver = [value.inner_htm]
+      end
+      resolverGroups[folder.css("guid").inner_html] = resolver
+    end
+  end
+end
+
+puts resolverGroups
+
