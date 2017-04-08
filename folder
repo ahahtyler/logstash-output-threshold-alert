@@ -1,0 +1,20 @@
+class Folder
+  attr_accessor :guid, :name, :group, :folder
+    
+  def initialize(guid, name, group, maxis)
+    @guid   = guid.to_s
+    @name   = name.to_s
+    @group  = group
+    @folder = get_parent_status(maxis)
+  end
+    
+  def get_parent_status(maxis)
+    status = maxis.get("/folders/#{@guid}")
+    status['parent'].nil?
+  end
+
+  def has_parent?
+    @folder
+  end
+
+end
