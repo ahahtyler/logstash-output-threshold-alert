@@ -1,188 +1,19 @@
 require 'set'
 require 'date'
 require 'json'
-require 'securerandom'
 require 'aws-sdk-for-ruby'
-require_relative 'lib/maxis_connection.rb'
 require_relative 'lib/rule.rb'
 require_relative 'lib/event.rb'
+require_relative 'lib/water_helper.rb'
+require_relative 'lib/maxis_connection.rb'
 
-def state_of_ticket(edits, eventId)
-  
-  event, ticket  = {}, {}
-
-  firstEvent         = (edits['edits'][0])['pathEdits'][0]['data'] 
-  ticket['tags']     = firstEvent['tags'].collect{ |t| t['id'] }
-  ticket['labels']   = firstEvent['labels'].collect{ |l| l['id'] }
-  ticket['watchers'] = firstEvent['watchers'].collect{ |w| w['id'] }
-  ticket['assigned'] = firstEvent['assigneeIdentity'][/kerberos:(.*)@ANT.AMAZON.COM/,1] || ""
-  ticket['folder']   = firstEvent['assignedFolder']
-  ticket['docId']    = firstEvent['id']
-  ticket['severity'] = firstEvent['extensions']['tt'].nil? ? "" : firstEvent['extensions']['tt']['impact']
-
-  edits['edits'].each do |e|
-
-    event['pathEdits'] = e['pathEdits']
-    event['actor']     = e['actualOriginator'][/kerberos:(.*)@ANT.AMAZON.COM/,1]
-
-    e['pathEdits'].each do |p|
-      action = p['editAction']
-      data   = p['data']
-      path   = p['path']
-
-      if path.include?("/watchers/")
-        ticket['watchers'] << data['id'] if action.eql?("PUT")
-        ticket['watchers'].delete(path.split('/').last) if action.eql?("DELETE")
-      
-      elsif path.include?("/labels/")
-        ticket['labels'] << data['id'] if action.eql?("PUT")
-        ticket['labels'].delete(path.split('/').last) if action.eql?("DELETE")
-
-      elsif path.include?("/tags/")
-        ticket['tags'] << data['id'] if action.eql?("PUT")
-        ticket['tags'].delete(path.split('/').last) if action.eql?("DELETE")
-
-      elsif path.eql?("/extensions/tt/impact")
-        ticket['severity'] = data if action.eql?("PUT")
-        ticket['severity'] = "" if action.eql?("DELETE")
-
-      elsif path.eql?("/assigneeIdentity")
-        ticket['assigned'] = data[/kerberos:(.*)@ANT.AMAZON.COM/,1] if action.eql?("PUT")
-        ticket['assigned'] = "" if action.eql?("DELETE")
-
-      elsif path.eql?("/assignedFolder")
-        ticket['folder'] = data 
-
-      end
-
-    end
-
-    break if e['id'].eql?(eventId)
-  end
-
-  return event, ticket
-
-end
-
-def valid_action_parameters?(rule, event)
-  return true if rule.action_params.empty?
-  action_params.values.eql?(event.data)
-end
-
-def valid_conditional_parameters?(rule, event)
-  return true if rule.conditional_params.empty?
-
-  process = false
-  rule.conditional_params.select do |key, value|
-    case key
-      when 'actor'
-        process = value.include?(event.eventActor)
-      when 'severity'
-        process = value.include?(event.severity)
-      when 'assigned'
-        process = value.include?(event.assigned)
-      when 'watchers'
-        process = (value & event.watchers).any?
-      when 'labels'
-        comparisons = value.collect { |labels| (labels.to_set).subset?(event.labels) }
-        process = comparisons.include? true 
-      when 'tag'
-        comparisons = value.collect { |tags| (tags.to_set).subset?(event.tags) }
-        process = comparisons.include? true
-    end
-    break unless process
-  end
-  aprocess
-end
-
-def resolve_ticket 
-   payload = {
-      :pathEdits => [{
-          :editAction => "PUT",
-          :path => "/status",
-          :data => "Resolved"
-        }]
-    }
-end
-
-def change_folder (param)
-  payload = {
-    :pathEdits => [{
-      :editAction => "PUT",
-      :path => "/assignedFolder",
-      :data => param
-      }]
-  } 
-end
-
-def add_label (param)
-  payload = {
-    :pathEdits => [{
-        :editAction => "PUT",
-        :path => "/labels/" + param,
-        :data => {
-          :id => param
-        }
-      }]
-  }
-end
-
-def add_tag (param)
-  payload = {
-    :pathEdits => [{
-        :editAction => "PUT",
-        :path => "/tags/" + param,
-        :data => {
-          :id => param
-        }
-      }]
-  }
-end
-
-def assign_user (param)
-  payload = {
-    :pathEdits => [{
-      :editAction => "PUT",
-      :path => "/assigneeIdentity",
-      :data => "kerberos:" + param + "@ANT.AMAZON.COM"
-      }]
-  }
-end
-
-def add_watcher (param)
-  payload = {
-    :pathEdits => [{
-      :editAction => "PUT",
-      :path => "/watchers/" + param,
-      :data => {
-        :id => param,
-        :type => "email"
-      }
-      }]
-  }
-end
-
-def add_comment (param)
-  eventGuid = SecureRandom.uuid
-  payload = {
-    :pathEdits => [{
-        :editAction => "PUT",
-        :path => "/conversation/" + eventGuid,
-        :data => {
-          :message => param,
-          :id => eventGuid,
-          :contentType => "text/amz-markdown-sim",
-          :messageType => "conversation",
-          :mentions => [ ]
-        }
-      }]
-  }
-end
-
+include WaterEngineHelper
 
 ################################################################
 #                       Initialization
 ################################################################
+
+@logger = WaterEngineHelper.class_variable_get(:@@logger)
 
 @maxis = MaxisConnection.new( "maxis-service-prod-pdx.amazon.com", 
                               "us-west-2",
@@ -195,6 +26,7 @@ Aws.config[:region]      = "us-west-2"
 rules_file = File.read('/home/stigty/WaterEngine/src/SupBTWater/bin/input.json')
 rules = JSON.parse(rules_file)['rules']
 
+puts "Successfully read in rules"
 
 ################################################################
 #                       Parse Rules
@@ -204,6 +36,7 @@ rules = JSON.parse(rules_file)['rules']
 cleanedRules = rules.collect { |r| Rule.new(r) }
 validFolders = cleanedRules.collect { |r| r.location }.flatten.uniq
 
+puts "Created rules objects and a list of valid folders"
 ################################################################
 #                   SQS Event Consumer
 ################################################################
@@ -221,35 +54,54 @@ validFolders = cleanedRules.collect { |r| r.location }.flatten.uniq
 
   #Determine the state of the Ticket & get Edits in event
   editDetails, ticketDetails = state_of_ticket(edits, eventId)
+  puts "Retrieved edit and ticket details"
+  puts "-------"
+  puts editDetails
+  puts "-------"
+  puts ticketDetails
+  puts "-------"
 
   #If there are no rules for the particular folder, skip
-  next unless validFolders.include?(folder)
+  puts "Performing folder check."
+  #next unless validFolders.include?(folder)
+  puts "Successfully validated folder. Moving on. "
 
   #For each edit in the event
   editDetails['pathEdits'].each do |edit|
 
     #Create the event object
     event = Event.new(edit, ticketDetails, editDetails['actor'])
+    puts "Successfully created event: #{event}"
 
-    #Determine possible rules for the event
-    possibleRules = cleanedRules.collect { |r| r if r.action.eql?(event.path) }.compact
+    puts "Checking if event is a PUT"
 
     #Skip if the event is not a PUT
     next unless event.editAction.eql?("PUT") 
+    puts "Generating possible rules"
+
+    #Determine possible rules for the event
+    possibleRules = cleanedRules.collect { |r| r if r.action.eql?(event.path) }.compact
+    puts "Generated a list of possible rules"
 
     #Skip if there are no possible rules
     next unless possibleRules.any?
+    puts "I have valid rules for the event."
 
     #For each possible Rule
     possibleRules.each do |rule|
 
       #Skip if the action parameters don't match
-      next unless validate_action_parameters?(rule, event)
+      puts "Checking action parameters"
+      next unless valid_action_parameters?(rule, event)
+      puts "Action parameters are good."
 
       #Skip if the conditional parameters don't match
+      puts "Checking conditional parameters"
       next unless valid_conditional_parameters?(rule, event)
+      puts "Conditional parameters are good"
 
       #Build payload for the reaction
+      puts "Determining what aciton to run"
       case rule.reaction
         when "/status-Resolved"
           payload = resolve_ticket
@@ -267,9 +119,10 @@ validFolders = cleanedRules.collect { |r| r.location }.flatten.uniq
           payload = add_comment(rule.reaction_params['message'])
       end
 
+      puts "Action payload: #{payload}"
       #Call maxis 
       @maxis.post("/issues/#{event.docId}/edits", payload)
-
+      sleep 100000
     end #Possible Rules
 
   end #PathEdits
