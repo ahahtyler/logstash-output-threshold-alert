@@ -1,131 +1,70 @@
-require 'set'
-require 'date'
-require 'json'
-require 'aws-sdk-for-ruby'
-require_relative 'lib/rule.rb'
-require_relative 'lib/event.rb'
-require_relative 'lib/water_helper.rb'
-require_relative 'lib/maxis_connection.rb'
+# encoding: utf-8
 
-include WaterEngineHelper
+#==============================================================================
+# PARSE COMMAND LINE OPTIONS
+#==============================================================================
 
-################################################################
-#                       Initialization
-################################################################
+require 'optparse'
 
-@logger = WaterEngineHelper.class_variable_get(:@@logger)
+options = { :action => :run }
 
-@maxis = MaxisConnection.new( "maxis-service-prod-pdx.amazon.com", 
-                              "us-west-2",
-                              "com.amazon.credentials.isengard.968648960172.user/stigty" )
+daemonize_help = "run daemonized in the background (default: false)"
+pidfile_help   = "the pid filename"
+logfile_help   = "the log filename"
+include_help   = "an additional $LOAD_PATH (may be used more than once)"
+debug_help     = "set $DEBUG to true"
+warn_help      = "enable warnings"
 
-Aws.config[:credentials] = Aws::OdinCredentials.new( "com.amazon.credentials.isengard.383053360765.user/ResolveGroupNotifier" )
-Aws.config[:region]      = "us-west-2"
-@sqs = Aws::SQS::QueuePoller.new( "https://sqs.us-west-2.amazonaws.com/383053360765/SupBTWaterRules" )
+op = OptionParser.new
+op.banner =  "An example of how to daemonize a long running Ruby process."
+op.separator ""
+op.separator "Usage: server [options]"
+op.separator ""
 
-rules_file = File.read('/home/stigty/WaterEngine/src/SupBTWater/bin/input.json')
-rules = JSON.parse(rules_file)['rules']
+op.separator ""
+op.separator "Process options:"
+op.on("-d", "--daemonize",   daemonize_help) {         options[:daemonize] = true  }
+op.on("-p", "--pid PIDFILE", pidfile_help)   { |value| options[:pidfile]   = value }
+op.on("-l", "--log LOGFILE", logfile_help)   { |value| options[:logfile]   = value }
 
-puts "Successfully read in rules"
+op.separator ""
+op.separator "Ruby options:"
+op.on("-I", "--include PATH", include_help) { |value| $LOAD_PATH.unshift(*value.split(":").map{|v| File.expand_path(v)}) }
+op.on(      "--debug",        debug_help)   { $DEBUG = true }
+op.on(      "--warn",         warn_help)    { $-w = true    }
 
-################################################################
-#                       Parse Rules
-################################################################
+op.separator ""
+op.separator "Common options:"
+op.on("-h", "--help")    { options[:action] = :help    }
+op.on("-v", "--version") { options[:action] = :version }
 
-#Parse rules from the input file
-cleanedRules = rules.collect { |r| Rule.new(r) }
-validFolders = cleanedRules.collect { |r| r.location }.flatten.uniq
 
-puts "Created rules objects and a list of valid folders"
-################################################################
-#                   SQS Event Consumer
-################################################################
+op.separator ""
+op.separator "Action options:"
+op.on("stop")  { options[:action] = :stop  }
+op.on("start") { options[:action] = :start }
 
-@sqs.poll(wait_time_seconds: 10) do |msg|
-  
-  #event_id = JSON.parse(JSON.parse(msg.body)["Message"])["documentId"]["editId"]
-  #doc_id   = JSON.parse(JSON.parse(msg.body)["Message"])["documentId"]["id"]
+op.separator ""
+op.parse!(ARGV)
 
-  eventId = "94c7ffbe-0613-4fc6-a77d-28da0cb3c53f:2017-06-30T18:38:36.606Z|us-west-2|103381878"
-  docId   = "94c7ffbe-0613-4fc6-a77d-28da0cb3c53f"
+options[:action] = (ARGV.pop).to_sym
+#==============================================================================
+# EXECUTE script
+#==============================================================================
 
-  #Get audit trail from SIM
-  edits = @maxis.get("/issues/#{docId}/edits")
+require_relative 'testwaterengine.rb' unless options[:action] == :help
 
-  #Determine the state of the Ticket & get Edits in event
-  editDetails, ticketDetails = state_of_ticket(edits, eventId)
-  puts "Retrieved edit and ticket details"
-  puts "-------"
-  puts editDetails
-  puts "-------"
-  puts ticketDetails
-  puts "-------"
+#Hardcode pidfile? 
 
-  #If there are no rules for the particular folder, skip
-  puts "Performing folder check."
-  #next unless validFolders.include?(folder)
-  puts "Successfully validated folder. Moving on. "
+case options[:action]
+when :help    
+ puts op.to_s
+when :version 
+ puts WaterEngine::VERSION
+when :stop    
+ WaterEngine.stop(options)
+when :start   
+ WaterEngine.run(options)
+end
 
-  #For each edit in the event
-  editDetails['pathEdits'].each do |edit|
-
-    #Create the event object
-    event = Event.new(edit, ticketDetails, editDetails['actor'])
-    puts "Successfully created event: #{event}"
-
-    puts "Checking if event is a PUT"
-
-    #Skip if the event is not a PUT
-    next unless event.editAction.eql?("PUT") 
-    puts "Generating possible rules"
-
-    #Determine possible rules for the event
-    possibleRules = cleanedRules.collect { |r| r if r.action.eql?(event.path) }.compact
-    puts "Generated a list of possible rules"
-
-    #Skip if there are no possible rules
-    next unless possibleRules.any?
-    puts "I have valid rules for the event."
-
-    #For each possible Rule
-    possibleRules.each do |rule|
-
-      #Skip if the action parameters don't match
-      puts "Checking action parameters"
-      next unless valid_action_parameters?(rule, event)
-      puts "Action parameters are good."
-
-      #Skip if the conditional parameters don't match
-      puts "Checking conditional parameters"
-      next unless valid_conditional_parameters?(rule, event)
-      puts "Conditional parameters are good"
-
-      #Build payload for the reaction
-      puts "Determining what aciton to run"
-      case rule.reaction
-        when "/status-Resolved"
-          payload = resolve_ticket
-        when "/assignedFolder"
-          payload = change_folder(rule.reaction_params['folder'])
-        when "/labels"
-          payload = add_label(rule.reaction_params['label'])
-        when "/tags"
-          payload = add_tag(rule.reaction_params['tag'])
-        when "/assigneeIdentity"
-          payload = assign_user(rule.reaction_params['assignee'])
-        when "/watchers"
-          payload = add_watcher(rule.reaction_params['watcher'])
-        when "/conversation"
-          payload = add_comment(rule.reaction_params['message'])
-      end
-
-      puts "Action payload: #{payload}"
-      #Call maxis 
-      @maxis.post("/issues/#{event.docId}/edits", payload)
-      sleep 100000
-    end #Possible Rules
-
-  end #PathEdits
-
-end #SQS
-
+#==============================================================================
