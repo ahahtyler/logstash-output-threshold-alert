@@ -1,4 +1,6 @@
 require 'fileutils'
+require 'timeout'
+require 'json'
 
 class WaterEngine
 
@@ -6,13 +8,16 @@ class WaterEngine
 
   VERSION = "1.0.0"
 
-  def self.run(options)
-    WaterEngine.new(options).run
+  def self.start(options)
+    WaterEngine.new(options).start
   end
 
   def self.stop(options)
-    #Create method to get the PID
-    #Process.kill('QUIT', pid)
+    WaterEngine.new(options).stop
+  end
+
+  def self.restart(options)
+    WaterEngine.new(options).restart
   end
 
   #==========================================================================
@@ -21,37 +26,38 @@ class WaterEngine
 
   def initialize(options)
     @options = options
-    options[:logfile] = File.expand_path(logfile) if logfile?   # daemonization might change CWD so expand any relative paths in advance
-    options[:pidfile] = File.expand_path(pidfile) if pidfile?   # (ditto)
+
+    options[:inputfile] = JSON.parse(File.read(inputfile)) if inputfile?
+    options[:rulefile]  = JSON.parse(File.read(rulefile))  if rulefile?
+    options[:logfile]   = File.expand_path(logfile)   if logfile?
+    options[:pidfile]   = File.expand_path(pidfile)   if pidfile?
+  end
+
+  #--------------------------------------------------------------------------
+
+  [:inputfile, :rulefile, :pidfile, :logfile].each do |method|
+    define_method "#{method}" do
+      options[method]
+    end
+
+    define_method "#{method}?" do
+      !options[method].nil?
+    end
+  end
+
+  [:info, :debug, :error].each do |method|
+    define_method "#{method}" do |arg|
+      puts "[#{Process.pid}] [#{Time.now.utc}] [#{method.upcase}] #{arg}"
+    end
   end
 
   def daemonize?
     options[:daemonize]
   end
 
-  def logfile
-    options[:logfile]
-  end
-
-  def pidfile
-    options[:pidfile]
-  end
-
-  def logfile?
-    !logfile.nil?
-  end
-
-  def pidfile?
-    !pidfile.nil?
-  end
-
-  def info(msg)
-    puts "[#{Process.pid}] [#{Time.now}] #{msg}"
-  end
-
   #--------------------------------------------------------------------------
 
-  def run
+  def start
 
     check_pid
     daemonize if daemonize?
@@ -65,10 +71,36 @@ class WaterEngine
     end
 
     while !quit
+      info "Starting Water Engine..."
       info "Doing some work"
       sleep(2)  # in real life, something productive would happen here
     end
     info "Finished"
+
+  end
+
+  def stop
+
+    if logfile?
+      redirect_output
+    elsif daemonize?
+      suppress_output
+    end
+
+    info "Stopping Water Engine..."
+    stop_process
+
+    Timeout::timeout(10) do
+     sleep 1 while File.exists?(pidfile)
+    end
+    info "Finished"
+
+  end
+
+  def restart
+
+    stop
+    start
 
   end
 
@@ -97,6 +129,15 @@ class WaterEngine
     $stdout.reopen($stderr)
   end
 
+  def stop_process
+    case get_pid
+      when nil, 0
+        info "Unable to stop. Process doesn't exist."
+      else
+        Process.kill('QUIT', get_pid)
+    end
+  end
+
   def write_pid
     if pidfile?
       begin
@@ -112,12 +153,19 @@ class WaterEngine
   def check_pid
     if pidfile?
       case pid_status(pidfile)
-      when :running, :not_owned
-        puts "A server is already running. Check #{pidfile}"
-        exit(1)
-      when :dead
-        File.delete(pidfile)
+        when :running, :not_owned
+          puts "A server is already running. Check #{pidfile}"
+          exit(1)
+        when :dead
+          File.delete(pidfile)
       end
+    end
+  end
+
+  def get_pid
+    case pid_status(pidfile)
+      when :running ,:not_owned
+        return ::File.read(pidfile).to_i
     end
   end
 
