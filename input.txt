@@ -45,7 +45,7 @@ class WaterEngine
     end
   end
 
-  [:info, :debug, :error].each do |method|
+  [:info, :debug, :warn, :error].each do |method|
     define_method "#{method}" do |arg|
       puts "[#{Process.pid}] [#{Time.now.utc}] [#{method.upcase}] #{arg}"
     end
@@ -64,14 +64,10 @@ class WaterEngine
     write_pid
     trap_signals
 
-    if logfile?
-      redirect_output
-    elsif daemonize?
-      suppress_output
-    end
+    redirect_output if logfile? && daemonize?
 
+    info "Starting Water Engine..."
     while !quit
-      info "Starting Water Engine..."
       info "Doing some work"
       sleep(2)  # in real life, something productive would happen here
     end
@@ -81,19 +77,10 @@ class WaterEngine
 
   def stop
 
-    if logfile?
-      redirect_output
-    elsif daemonize?
-      suppress_output
-    end
+    redirect_output if logfile? && daemonize?
 
     info "Stopping Water Engine..."
     stop_process
-
-    Timeout::timeout(10) do
-     sleep 1 while File.exists?(pidfile)
-    end
-    info "Finished"
 
   end
 
@@ -124,17 +111,16 @@ class WaterEngine
     $stdout.sync = $stderr.sync = true
   end
 
-  def suppress_output
-    $stderr.reopen('/dev/null', 'a')
-    $stdout.reopen($stderr)
-  end
-
   def stop_process
     case get_pid
       when nil, 0
-        info "Unable to stop. Process doesn't exist."
+        warn "Unable to stop. Process doesn't exist."
       else
         Process.kill('QUIT', get_pid)
+    end
+
+    Timeout::timeout(10) do
+      sleep 1 while File.exists?(pidfile)
     end
   end
 
@@ -154,7 +140,7 @@ class WaterEngine
     if pidfile?
       case pid_status(pidfile)
         when :running, :not_owned
-          puts "A server is already running. Check #{pidfile}"
+          warn "A server is already running. Check #{pidfile}"
           exit(1)
         when :dead
           File.delete(pidfile)
