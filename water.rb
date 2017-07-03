@@ -6,7 +6,7 @@
 
 require 'optparse'
 
-options = { :action => :run }
+options = { :action => :none }
 
 daemonize_help = "run daemonized in the background (default: false)"
 pidfile_help   = "the pid filename"
@@ -38,33 +38,33 @@ op.separator "Common options:"
 op.on("-h", "--help")    { options[:action] = :help    }
 op.on("-v", "--version") { options[:action] = :version }
 
-
-op.separator ""
-op.separator "Action options:"
-op.on("stop")  { options[:action] = :stop  }
-op.on("start") { options[:action] = :start }
-
 op.separator ""
 op.parse!(ARGV)
 
-options[:action] = (ARGV.pop).to_sym
+actionARG = ARGV.pop
+options[:action] = actionARG.to_sym unless actionARG.nil?
+
 #==============================================================================
 # EXECUTE script
 #==============================================================================
 
-require_relative 'testwaterengine.rb' unless options[:action] == :help
+require_relative 'water_engine.rb' unless options[:action] == :help
 
-#Hardcode pidfile? 
+puts "Workig with #{options[:action]}"
 
 case options[:action]
-when :help    
- puts op.to_s
-when :version 
- puts WaterEngine::VERSION
-when :stop    
- WaterEngine.stop(options)
-when :start   
- WaterEngine.run(options)
+  when :help
+    puts "HELP"
+    puts op.to_s
+  when :version
+    puts "VERSION"
+    puts WaterEngine::VERSION
+  when :stop
+    WaterEngine.stop(options)
+  when :start
+    WaterEngine.run(options)
+  else
+    puts "Invalid parameter. Try again"
 end
 
 #==============================================================================
