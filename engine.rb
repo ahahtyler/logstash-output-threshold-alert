@@ -1,132 +1,261 @@
-require 'set'
-require 'date'
 require 'json'
-
+require 'timeout'
+require 'fileutils'
 require 'aws-sdk-for-ruby'
-require_relative 'lib/rule.rb'
-require_relative 'lib/event.rb'
-require_relative 'lib/water_helper.rb'
-require_relative 'lib/maxis_connection.rb'
 
-include WaterEngineHelper
+require_relative 'rule.rb'
+require_relative 'event.rb'
+require_relative 'maxis.rb'
+require_relative 'engine_helper.rb'
 
-################################################################
-#                       Initialization
-################################################################
+class WaterEngine
 
-@logger = WaterEngineHelper.class_variable_get(:@@logger)
+  ################################################################
+  #                       CLI Methods
+  ################################################################
 
-@maxis = MaxisConnection.new( "maxis-service-prod-pdx.amazon.com", 
-                              "us-west-2",
-                              "com.amazon.credentials.isengard.968648960172.user/stigty" )
+  VERSION = "1.0.0"
 
-Aws.config[:credentials] = Aws::OdinCredentials.new( "com.amazon.credentials.isengard.383053360765.user/ResolveGroupNotifier" )
-Aws.config[:region]      = "us-west-2"
-@sqs = Aws::SQS::QueuePoller.new( "https://sqs.us-west-2.amazonaws.com/383053360765/SupBTWaterRules" )
+  def self.start(options)
+    WaterEngine.new(options).start
+  end
 
-rules_file = File.read('/home/stigty/WaterEngine/src/SupBTWater/bin/input.json')
-rules = JSON.parse(rules_file)['rules']
+  def self.stop(options)
+    WaterEngine.new(options).stop
+  end
 
-puts "Successfully read in rules"
+  def self.restart(options)
+    WaterEngine.new(options).restart
+  end
 
-################################################################
-#                       Parse Rules
-################################################################
+  ################################################################
+  #                        Initialization
+  ################################################################
+  attr_reader :options, :quit
 
-#Parse rules from the input file
-cleanedRules = rules.collect { |r| Rule.new(r) }
-validFolders = cleanedRules.collect { |r| r.location }.flatten.uniq
+  def initialize(options)
+    @options = options
 
-puts "Created rules objects and a list of valid folders"
-################################################################
-#                   SQS Event Consumer
-################################################################
+    options[:input] = JSON.parse(File.read(input)) if input?
+    options[:rules] = JSON.parse(File.read(rules)) if rules?
+    options[:logfile] = File.expand_path(logfile)  if logfile?
+    options[:pidfile] = File.expand_path(pidfile)  if pidfile?
 
-@sqs.poll(wait_time_seconds: 10) do |msg|
-  
-  #event_id = JSON.parse(JSON.parse(msg.body)["Message"])["documentId"]["editId"]
-  #doc_id   = JSON.parse(JSON.parse(msg.body)["Message"])["documentId"]["id"]
+    Aws.config[:credentials] = Aws::OdinCredentials.new(sqs['materialset'])
+    Aws.config[:region] = sqs['region']
 
-  eventId = "94c7ffbe-0613-4fc6-a77d-28da0cb3c53f:2017-06-30T18:38:36.606Z|us-west-2|103381878"
-  docId   = "94c7ffbe-0613-4fc6-a77d-28da0cb3c53f"
+    @sqs = Aws::SQS::QueuePoller.new(sqs['endpint'])
+    @maxis = MaxisConnection.new(maxis['region'], maxis['endpoint'], maxis['materialset'])
+  end
 
-  #Get audit trail from SIM
-  edits = @maxis.get("/issues/#{docId}/edits")
+  ################################################################
+  #                      Variable Methods
+  ################################################################
+  [:input, :rules, :pidfile, :logfile].each do |method|
+    define_method "#{method}" do
+      options[method]
+    end
 
-  #Determine the state of the Ticket & get Edits in event
-  editDetails, ticketDetails = state_of_ticket(edits, eventId)
-  puts "Retrieved edit and ticket details"
-  puts "-------"
-  puts editDetails
-  puts "-------"
-  puts ticketDetails
-  puts "-------"
+    define_method "#{method}?" do
+      !options[method].nil?
+    end
+  end
 
-  #If there are no rules for the particular folder, skip
-  puts "Performing folder check."
-  #next unless validFolders.include?(folder)
-  puts "Successfully validated folder. Moving on. "
+  [:maxis, :s3, :sqs].each do |method|
+    define_method "#{method}" do
+      options[:input]["#{method}"]
+    end
+  end
 
-  #For each edit in the event
-  editDetails['pathEdits'].each do |edit|
+  [:info, :debug, :warn, :error].each do |method|
+    define_method "#{method}" do |arg|
+      puts "[#{Process.pid}] [#{Time.now.utc}] [#{method.upcase}] #{arg}"
+    end
+  end
 
-    #Create the event object
-    event = Event.new(edit, ticketDetails, editDetails['actor'])
-    puts "Successfully created event: #{event}"
+  def daemonize?
+    options[:daemonize]
+  end
 
-    puts "Checking if event is a PUT"
+  ################################################################
+  #                         CLI Actions
+  ################################################################
+  def start
+    check_pid
+    daemonize if daemonize?
+    write_pid
+    trap_signals
+    redirect_output if logfile? && daemonize?
 
-    #Skip if the event is not a PUT
-    next unless event.editAction.eql?("PUT") 
-    puts "Generating possible rules"
+    info "Starting Water Engine..."
 
-    #Determine possible rules for the event
-    possibleRules = cleanedRules.collect { |r| r if r.action.eql?(event.path) }.compact
-    puts "Generated a list of possible rules"
+    cleanedRules = rules['rules'].collect { |r| Rule.new(r) }
+    validFolders = cleanedRules.collect   { |r| r.location }.flatten.uniq
 
-    #Skip if there are no possible rules
-    next unless possibleRules.any?
-    puts "I have valid rules for the event."
+    info "Created rules objects and a list of valid folders"
 
-    #For each possible Rule
-    possibleRules.each do |rule|
+    @sqs.poll(wait_time_seconds: 10) do |msg|
+      #event_id = JSON.parse(JSON.parse(msg.body)["Message"])["documentId"]["editId"]
+      #doc_id   = JSON.parse(JSON.parse(msg.body)["Message"])["documentId"]["id"]
 
-      #Skip if the action parameters don't match
-      puts "Checking action parameters"
-      next unless valid_action_parameters?(rule, event)
-      puts "Action parameters are good."
+      eventId = "94c7ffbe-0613-4fc6-a77d-28da0cb3c53f:2017-06-30T18:38:36.606Z|us-west-2|103381878"
+      docId   = "94c7ffbe-0613-4fc6-a77d-28da0cb3c53f"
 
-      #Skip if the conditional parameters don't match
-      puts "Checking conditional parameters"
-      next unless valid_conditional_parameters?(rule, event)
-      puts "Conditional parameters are good"
+      edits = @maxis.get("/issues/#{docId}/edits")
 
-      #Build payload for the reaction
-      puts "Determining what aciton to run"
-      case rule.reaction
-        when "/status-Resolved"
-          payload = resolve_ticket
-        when "/assignedFolder"
-          payload = change_folder(rule.reaction_params['folder'])
-        when "/labels"
-          payload = add_label(rule.reaction_params['label'])
-        when "/tags"
-          payload = add_tag(rule.reaction_params['tag'])
-        when "/assigneeIdentity"
-          payload = assign_user(rule.reaction_params['assignee'])
-        when "/watchers"
-          payload = add_watcher(rule.reaction_params['watcher'])
-        when "/conversation"
-          payload = add_comment(rule.reaction_params['message'])
+      editDetails, ticketDetails = state_of_ticket(edits, eventId)
+      info "Retrieved edit and ticket details"
+
+      info "Performing folder check."
+      #next unless validFolders.include?(folder)
+      info "Successfully validated folder. Moving on."
+
+      #For each edit in the event
+      editDetails['pathEdits'].each do |edit|
+
+        #Create the event object
+        event = Event.new(edit, ticketDetails, editDetails['actor'])
+        info "Successfully created event: #{event}"
+
+        info "Checking if event is a PUT"
+
+        #Skip if the event is not a PUT
+        next unless event.editAction.eql?("PUT")
+        info "Generating possible rules"
+
+        #Determine possible rules for the event
+        possibleRules = cleanedRules.collect { |r| r if r.action.eql?(event.path) }.compact
+        info "Generated a list of possible rules"
+
+        #Skip if there are no possible rules
+        next unless possibleRules.any?
+        info "I have valid rules for the event."
+
+        #For each possible Rule
+        possibleRules.each do |rule|
+
+          #Skip if the action parameters don't match
+          info "Checking action parameters"
+          next unless valid_action_parameters?(rule, event)
+          info "Action parameters are good."
+
+          #Skip if the conditional parameters don't match
+          info "Checking conditional parameters"
+          next unless valid_conditional_parameters?(rule, event)
+          info "Conditional parameters are good"
+
+          reaction = determine_rule_action(rule.reaction)
+
+          info "Action payload: #{reaction}"
+          #Call maxis
+          @maxis.post("/issues/#{event.docId}/edits", reaction)
+
+        end #Possible Rules
+
+      end #PathEdits
+
+    end #SQS
+
+  end
+
+  def stop
+
+    redirect_output if logfile? && daemonize?
+
+    info "Stopping Water Engine..."
+    stop_process
+
+  end
+
+  def restart
+
+    stop
+    start
+
+  end
+
+  ################################################################
+  #     DAEMONIZING, PID MANAGEMENT, and OUTPUT REDIRECTION
+  ################################################################
+  def daemonize
+    exit if fork
+    Process.setsid
+    exit if fork
+    Dir.chdir "/"
+  end
+
+  def redirect_output
+    FileUtils.mkdir_p(File.dirname(logfile), :mode => 0755)
+    FileUtils.touch logfile
+    File.chmod(0644, logfile)
+    $stderr.reopen(logfile, 'a')
+    $stdout.reopen($stderr)
+    $stdout.sync = $stderr.sync = true
+  end
+
+  def stop_process
+    case get_pid
+      when nil, 0
+        warn "Unable to stop. Process doesn't exist."
+      else
+        Process.kill('QUIT', get_pid)
+    end
+
+    Timeout::timeout(10) do
+      sleep 1 while File.exists?(pidfile)
+    end
+  end
+
+  def write_pid
+    if pidfile?
+      begin
+        File.open(pidfile, ::File::CREAT | ::File::EXCL | ::File::WRONLY){|f| f.write("#{Process.pid}") }
+        at_exit { File.delete(pidfile) if File.exists?(pidfile) }
+      rescue Errno::EEXIST
+        check_pid
+        retry
       end
+    end
+  end
 
-      puts "Action payload: #{payload}"
-      #Call maxis 
-      @maxis.post("/issues/#{event.docId}/edits", payload)
-      
-    end #Possible Rules
+  def check_pid
+    if pidfile?
+      case pid_status(pidfile)
+        when :running, :not_owned
+          warn "A server is already running. Check #{pidfile}"
+          exit(1)
+        when :dead
+          File.delete(pidfile)
+      end
+    end
+  end
 
-  end #PathEdits
+  def get_pid
+    case pid_status(pidfile)
+      when :running ,:not_owned
+        return ::File.read(pidfile).to_i
+    end
+  end
 
-end #SQS
+  def pid_status(pidfile)
+    return :exited unless File.exists?(pidfile)
+    pid = ::File.read(pidfile).to_i
+    return :dead if pid == 0
+    Process.kill(0, pid)
+    :running
+  rescue Errno::ESRCH
+    :dead
+  rescue Errno::EPERM
+    :not_owned
+  end
 
+  ################################################################
+  #                      SIGNAL HANDLING
+  ################################################################
+  def trap_signals
+    trap(:QUIT) do   # graceful shutdown
+      @quit = true
+    end
+  end
+
+end
