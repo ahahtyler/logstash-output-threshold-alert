@@ -1,0 +1,20 @@
+{
+"rules": [ 
+  {
+    "action": "/",
+    "action_params": {},
+    "conditional_params": 
+      {"actor"    : ["stigty"],
+       "severity" : [5, 4, 3], 
+       "watchers" : ["stigty@amazon.com", "boop"],
+       "assigned" : ["blah", "stigty"],
+       "labels"   : [["a5739bf8-3339-4a66-94d9-484b5287dfb9"]]}  
+    ,
+    "location": ["H", "I", "J"],
+    "reaction": "/assignedFolder",
+    "reaction_params": {
+      "folder": "25f9a3f1-cd60-46a9-a81a-df7622a2b88d"
+    }
+  }
+  ]
+}
